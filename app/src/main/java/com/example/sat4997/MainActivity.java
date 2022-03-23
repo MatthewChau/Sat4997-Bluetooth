@@ -78,13 +78,4 @@ public class MainActivity extends AppCompatActivity {
         getMenuInflater().inflate(R.menu.activity_main, menu);
         return true;
     }
-
-    /** Called when the user taps the Send button */
-    public void sendMessage(View view) {
-        Intent intent = new Intent(this, DisplayMessageActivity.class);
-        EditText editText = (EditText) findViewById(R.id.editTextTextPersonName);
-        String message = editText.getText().toString();
-        intent.putExtra(EXTRA_MESSAGE, message);
-        startActivity(intent);
-    }
 }
