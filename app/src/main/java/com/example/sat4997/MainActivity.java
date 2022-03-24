@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
@@ -26,6 +27,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.method.ScrollingMovementMethod;
+import android.util.Log;
 import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,6 +40,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -146,8 +149,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
-            peripheralTextView.append("Hello World\n");
-            peripheralTextView.append("Index: " + deviceIndex + ", Device Name: " + result.getDevice().getName() + " rssi: " + result.getRssi() + "MAC: " + result.getDevice().getAddress() + "\n");
+            peripheralTextView.append("Index: " + deviceIndex + ", Device Name: " + result.getDevice().getName() + " MAC: " + result.getDevice().getAddress() + "\n");
             devicesDiscovered.add(result.getDevice());
             deviceIndex++;
             // auto scroll for text view
@@ -161,6 +163,8 @@ public class MainActivity extends AppCompatActivity {
 
     // Device connect call back
     private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback() {
+
+        private UUID HEART_RATE_UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb");
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
@@ -211,7 +215,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
-            // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
+            // this will get called after the client initiates a BluetoothGatt.discoverServices() call
             MainActivity.this.runOnUiThread(new Runnable() {
                 public void run() {
                     peripheralTextView.append("device services have been discovered\n");
@@ -304,6 +308,8 @@ public class MainActivity extends AppCompatActivity {
         peripheralTextView.append("Trying to connect to device at index: " + deviceIndexInput.getText() + "\n");
         int deviceSelected = Integer.parseInt(deviceIndexInput.getText().toString());
         bluetoothGatt = devicesDiscovered.get(deviceSelected).connectGatt(this, false, btleGattCallback);
+        //BluetoothDevice device = btAdapter.getRemoteDevice("DE:5E:EE:07:B5:7B");
+        //bluetoothGatt = device.connectGatt(this, false, btleGattCallback);
     }
 
     public void disconnectDeviceSelected() {
