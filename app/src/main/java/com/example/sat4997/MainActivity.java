@@ -1,191 +1,353 @@
 package com.example.sat4997;
 
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.text.method.ScrollingMovementMethod;
 import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity {
 
-    public static final String EXTRA_MESSAGE = "com.example.sat4997.MESSAGE";
-
-    TextView textview2;
-    private static final int REQUEST_ENABLE_BT = 1;
+    BluetoothManager btManager;
     BluetoothAdapter btAdapter;
+    BluetoothLeScanner btScanner;
+    Button startScanningButton;
+    Button stopScanningButton;
+    TextView peripheralTextView;
+    private final static int REQUEST_ENABLE_BT = 1;
+    private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
 
+    Boolean btScanning = false;
+    int deviceIndex = 0;
+    ArrayList<BluetoothDevice> devicesDiscovered = new ArrayList<BluetoothDevice>();
+    EditText deviceIndexInput;
+    Button connectToDevice;
+    Button disconnectDevice;
+    BluetoothGatt bluetoothGatt;
+
+    public final static String ACTION_GATT_CONNECTED =
+            "com.example.bluetooth.le.ACTION_GATT_CONNECTED";
+    public final static String ACTION_GATT_DISCONNECTED =
+            "com.example.bluetooth.le.ACTION_GATT_DISCONNECTED";
+    public final static String ACTION_GATT_SERVICES_DISCOVERED =
+            "com.example.bluetooth.le.ACTION_GATT_SERVICES_DISCOVERED";
+    public final static String ACTION_DATA_AVAILABLE =
+            "com.example.bluetooth.le.ACTION_DATA_AVAILABLE";
+    public final static String EXTRA_DATA =
+            "com.example.bluetooth.le.EXTRA_DATA";
+
+    public Map<String, String> uuids = new HashMap<String, String>();
+
+    // Stops scanning after 10 seconds.
+    private Handler mHandler = new Handler();
+    private static final long SCAN_PERIOD = 10000;
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        textview2 = (TextView) findViewById(R.id.textView2);
+        peripheralTextView = (TextView) findViewById(R.id.PeripheralTextView);
+        peripheralTextView.setMovementMethod(new ScrollingMovementMethod());
+        deviceIndexInput = (EditText) findViewById(R.id.InputIndex);
+        deviceIndexInput.setText("0");
 
-        // Getting the Bluetooth adapter
-        btAdapter = BluetoothAdapter.getDefaultAdapter();
-        textview2.append("\nAdapter: " + btAdapter);
+        connectToDevice = (Button) findViewById(R.id.ConnectButton);
+        connectToDevice.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                connectToDeviceSelected();
+            }
+        });
 
-        //CheckBluetoothState();
+        disconnectDevice = (Button) findViewById(R.id.DisconnectButton);
+        disconnectDevice.setVisibility(View.INVISIBLE);
+        disconnectDevice.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                disconnectDeviceSelected();
+            }
+        });
+
+        startScanningButton = (Button) findViewById(R.id.StartScanButton);
+        startScanningButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                startScanning();
+            }
+        });
+
+        stopScanningButton = (Button) findViewById(R.id.StopScanButton);
+        stopScanningButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                stopScanning();
+            }
+        });
+        stopScanningButton.setVisibility(View.INVISIBLE);
+
+        btManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        btAdapter = btManager.getAdapter();
+        btScanner = btAdapter.getBluetoothLeScanner();
+
+        if (btAdapter != null && !btAdapter.isEnabled()) {
+            Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableIntent, REQUEST_ENABLE_BT);
+        }
+
+        // Make sure we have access coarse location enabled, if not, prompt the user to enable it
+        if (this.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("This app needs location access");
+            builder.setMessage("Please grant location access so this app can detect peripherals.");
+            builder.setPositiveButton(android.R.string.ok, null);
+            builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                @Override
+                public void onDismiss(DialogInterface dialog) {
+                    requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, PERMISSION_REQUEST_COARSE_LOCATION);
+                }
+            });
+            builder.show();
+        }
+    }
+
+    // Device scan callback.
+    private ScanCallback leScanCallback = new ScanCallback() {
+
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+            peripheralTextView.append("Hello World\n");
+            peripheralTextView.append("Index: " + deviceIndex + ", Device Name: " + result.getDevice().getName() + " rssi: " + result.getRssi() + "MAC: " + result.getDevice().getAddress() + "\n");
+            devicesDiscovered.add(result.getDevice());
+            deviceIndex++;
+            // auto scroll for text view
+            final int scrollAmount = peripheralTextView.getLayout().getLineTop(peripheralTextView.getLineCount()) - peripheralTextView.getHeight();
+            // if there is no need to scroll, scrollAmount will be <=0
+            if (scrollAmount > 0) {
+                peripheralTextView.scrollTo(0, scrollAmount);
+            }
+        }
+    };
+
+    // Device connect call back
+    private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback() {
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic) {
+            // this will get called anytime you perform a read or write characteristic operation
+            MainActivity.this.runOnUiThread(new Runnable() {
+                public void run() {
+                    peripheralTextView.append("device read or wrote to\n");
+                }
+            });
+        }
+
+        @Override
+        public void onConnectionStateChange(final BluetoothGatt gatt, final int status, final int newState) {
+            // this will get called when a device connects or disconnects
+            System.out.println(newState);
+            switch (newState) {
+                case 0:
+                    MainActivity.this.runOnUiThread(new Runnable() {
+                        public void run() {
+                            peripheralTextView.append("device disconnected\n");
+                            connectToDevice.setVisibility(View.VISIBLE);
+                            disconnectDevice.setVisibility(View.INVISIBLE);
+                        }
+                    });
+                    break;
+                case 2:
+                    MainActivity.this.runOnUiThread(new Runnable() {
+                        public void run() {
+                            peripheralTextView.append("device connected\n");
+                            connectToDevice.setVisibility(View.INVISIBLE);
+                            disconnectDevice.setVisibility(View.VISIBLE);
+                        }
+                    });
+
+                    // discover services and characteristics for this device
+                    bluetoothGatt.discoverServices();
+
+                    break;
+                default:
+                    MainActivity.this.runOnUiThread(new Runnable() {
+                        public void run() {
+                            peripheralTextView.append("we encounterned an unknown state, uh oh\n");
+                        }
+                    });
+                    break;
+            }
+        }
+
+        @Override
+        public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
+            // this will get called after the client initiates a 			BluetoothGatt.discoverServices() call
+            MainActivity.this.runOnUiThread(new Runnable() {
+                public void run() {
+                    peripheralTextView.append("device services have been discovered\n");
+                }
+            });
+            displayGattServices(bluetoothGatt.getServices());
+        }
+
+        @Override
+        // Result of a characteristic read operation
+        public void onCharacteristicRead(BluetoothGatt gatt,
+                                         BluetoothGattCharacteristic characteristic,
+                                         int status) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
+            }
+        }
+    };
+
+    private void broadcastUpdate(final String action,
+                                 final BluetoothGattCharacteristic characteristic) {
+
+        System.out.println(characteristic.getUuid());
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case PERMISSION_REQUEST_COARSE_LOCATION: {
+                if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    System.out.println("coarse location permission granted");
+                } else {
+                    final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+                    builder.setTitle("Functionality limited");
+                    builder.setMessage("Since location access has not been granted, this app will not be able to discover beacons when in the background.");
+                    builder.setPositiveButton(android.R.string.ok, null);
+                    builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
+
+                        @Override
+                        public void onDismiss(DialogInterface dialog) {
+                        }
+
+                    });
+                    builder.show();
+                }
+                return;
+            }
+        }
+    }
+
+    public void startScanning() {
+        System.out.println("start scanning");
+        btScanning = true;
+        deviceIndex = 0;
+        devicesDiscovered.clear();
+        peripheralTextView.setText("");
+        peripheralTextView.append("Started Scanning\n");
+        startScanningButton.setVisibility(View.INVISIBLE);
+        stopScanningButton.setVisibility(View.VISIBLE);
+        AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+                btScanner.startScan(leScanCallback);
+            }
+        });
+
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                stopScanning();
+            }
+        }, SCAN_PERIOD);
+    }
+
+    public void stopScanning() {
+        System.out.println("stopping scanning");
+        peripheralTextView.append("Stopped Scanning\n");
+        btScanning = false;
+        startScanningButton.setVisibility(View.VISIBLE);
+        stopScanningButton.setVisibility(View.INVISIBLE);
+        AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+                btScanner.stopScan(leScanCallback);
+            }
+        });
+    }
+
+    public void connectToDeviceSelected() {
+        peripheralTextView.append("Trying to connect to device at index: " + deviceIndexInput.getText() + "\n");
+        int deviceSelected = Integer.parseInt(deviceIndexInput.getText().toString());
+        bluetoothGatt = devicesDiscovered.get(deviceSelected).connectGatt(this, false, btleGattCallback);
+    }
+
+    public void disconnectDeviceSelected() {
+        peripheralTextView.append("Disconnecting from device\n");
+        bluetoothGatt.disconnect();
+    }
+
+    private void displayGattServices(List<BluetoothGattService> gattServices) {
+        if (gattServices == null) return;
+
+        // Loops through available GATT Services.
+        for (BluetoothGattService gattService : gattServices) {
+
+            final String uuid = gattService.getUuid().toString();
+            System.out.println("Service discovered: " + uuid);
+            MainActivity.this.runOnUiThread(new Runnable() {
+                public void run() {
+                    peripheralTextView.append("Service disovered: "+uuid+"\n");
+                }
+            });
+            new ArrayList<HashMap<String, String>>();
+            List<BluetoothGattCharacteristic> gattCharacteristics =
+                    gattService.getCharacteristics();
+
+            // Loops through available Characteristics.
+            for (BluetoothGattCharacteristic gattCharacteristic :
+                    gattCharacteristics) {
+
+                final String charUuid = gattCharacteristic.getUuid().toString();
+                System.out.println("Characteristic discovered for service: " + charUuid);
+                MainActivity.this.runOnUiThread(new Runnable() {
+                    public void run() {
+                        peripheralTextView.append("Characteristic discovered for service: "+charUuid+"\n");
+                    }
+                });
+
+            }
+        }
     }
 
     /** Called when an activity completes. */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_ENABLE_BT) {
-            //CheckBluetoothState();
-        }
-    }
 
-//    private void CheckBluetoothState() {
-//        // Checks for the Bluetooth support and then makes sure it is turned on
-//        // If it isn't turned on, request to turn it on
-//        // List paired devices
-//        if (btAdapter == null) {
-//            textview2.append("\nBluetooth NOT supported. Aborting.");
-//            return;
-//        } else {
-//            if (btAdapter.isEnabled()) {
-//                textview2.append("\nBluetooth is enabled...");
-//
-//                // Listing paired devices
-//                textview2.append("\nPaired Devices are:");
-//                Set<BluetoothDevice> devices = btAdapter.getBondedDevices();
-//
-//                for (BluetoothDevice device : devices) {
-//                    textview2.append("\n  Device: " + device.getName() + ", " + device);
-//                }
-//            } else {
-//                //Prompt user to turn on Bluetooth
-//                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-//                startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
-//            }
-//        }
-//    }
-
-    private BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-    private boolean scanning;
-    private Handler handler = new Handler();
-
-    // Stops scanning after 10 seconds.
-    private static final long SCAN_PERIOD = 10000;
-
-    private void scanLeDevice() {
-        if (!scanning) {
-            // Stops scanning after a predefined scan period.
-            handler.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    scanning = false;
-                    bluetoothLeScanner.stopScan(leScanCallback);
-                }
-            }, SCAN_PERIOD);
-
-            scanning = true;
-            bluetoothLeScanner.startScan(leScanCallback);
-        } else {
-            scanning = false;
-            bluetoothLeScanner.stopScan(leScanCallback);
-        }
-    }
-
-    private LeDeviceListAdapter leDeviceListAdapter = new LeDeviceListAdapter();
-
-    // Device scan callback.
-    private ScanCallback leScanCallback =
-            new ScanCallback() {
-                @Override
-                public void onScanResult(int callbackType, ScanResult result) {
-                    super.onScanResult(callbackType, result);
-                    leDeviceListAdapter.addDevice(result.getDevice());
-                    leDeviceListAdapter.notifyDataSetChanged();
-                }
-            };
-
-    // Adapter for holding devices found through scanning.
-    private class LeDeviceListAdapter extends BaseAdapter {
-        private ArrayList<BluetoothDevice> mLeDevices;
-        private LayoutInflater mInflator;
-        public LeDeviceListAdapter() {
-            super();
-            mLeDevices = new ArrayList<BluetoothDevice>();
-            mInflator = DeviceScanActivity.this.getLayoutInflater();
-        }
-        public void addDevice(BluetoothDevice device) {
-            if(!mLeDevices.contains(device)) {
-                mLeDevices.add(device);
-            }
-        }
-        public BluetoothDevice getDevice(int position) {
-            return mLeDevices.get(position);
-        }
-        public void clear() {
-            mLeDevices.clear();
-        }
-        @Override
-        public int getCount() {
-            return mLeDevices.size();
-        }
-        @Override
-        public Object getItem(int i) {
-            return mLeDevices.get(i);
-        }
-        @Override
-        public long getItemId(int i) {
-            return i;
-        }
-        @Override
-        public View getView(int i, View view, ViewGroup viewGroup) {
-            ViewHolder viewHolder;
-            // General ListView optimization code.
-            if (view == null) {
-                view = mInflator.inflate(R.layout.listitem_device, null);
-                viewHolder = new ViewHolder();
-                viewHolder.deviceAddress = (TextView) view.findViewById(R.id.device_address);
-                viewHolder.deviceName = (TextView) view.findViewById(R.id.device_name);
-                view.setTag(viewHolder);
-            } else {
-                viewHolder = (ViewHolder) view.getTag();
-            }
-            BluetoothDevice device = mLeDevices.get(i);
-            final String deviceName = device.getName();
-            if (deviceName != null && deviceName.length() > 0)
-                viewHolder.deviceName.setText(deviceName);
-            else
-                viewHolder.deviceName.setText(R.string.unknown_device);
-            viewHolder.deviceAddress.setText(device.getAddress());
-            return view;
-        }
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.activity_main, menu);
-        return true;
-    }
-
-    static class ViewHolder {
-        TextView deviceName;
-        TextView deviceAddress;
     }
 }
