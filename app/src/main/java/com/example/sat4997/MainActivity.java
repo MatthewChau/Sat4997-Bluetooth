@@ -144,6 +144,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // Switch to bonded devices screen
+    public void getBondedDevicesScene(View view) {
+        Intent intent = new Intent(this, DisplayBondedDevicesActivity.class);
+        startActivity(intent);
+    }
+
     // Device scan callback.
     private ScanCallback leScanCallback = new ScanCallback() {
 
@@ -215,10 +221,24 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onServicesDiscovered(final BluetoothGatt gatt, final int status) {
+            // https://localcoder.org/enabling-bluetooth-characteristic-notification-in-android-bluetooth-low-energy
+            super.onServicesDiscovered(gatt, status);
+            List<BluetoothGattService> services = bluetoothGatt.getServices();
+            for(BluetoothGattService service : services){
+                if( service.getUuid().equals("SERVICE_UUID")) { // TEMP
+                    BluetoothGattCharacteristic characteristicData = service.getCharacteristic(HEART_RATE_UUID);
+                    for (BluetoothGattDescriptor descriptor : characteristicData.getDescriptors()) {
+                        descriptor.setValue( BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+                        bluetoothGatt.writeDescriptor(descriptor);
+                    }
+                    gatt.setCharacteristicNotification(characteristicData, true);
+                }
+            }
+
             // this will get called after the client initiates a BluetoothGatt.discoverServices() call
             MainActivity.this.runOnUiThread(new Runnable() {
                 public void run() {
-                    peripheralTextView.append("device services have been discovered\n");
+                    peripheralTextView.append("Device: " + bluetoothGatt.getDevice().getName() + "have been discovered\n");
                 }
             });
             displayGattServices(bluetoothGatt.getServices());
@@ -232,6 +252,11 @@ public class MainActivity extends AppCompatActivity {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 broadcastUpdate(ACTION_DATA_AVAILABLE, characteristic);
             }
+
+            Log.i("onCharacteristicRead", characteristic.toString());
+            byte[] value=characteristic.getValue();
+            String v = new String(value);
+            Log.i("onCharacteristicRead", "Value: " + v);
         }
     };
 
@@ -307,9 +332,13 @@ public class MainActivity extends AppCompatActivity {
     public void connectToDeviceSelected() {
         peripheralTextView.append("Trying to connect to device at index: " + deviceIndexInput.getText() + "\n");
         int deviceSelected = Integer.parseInt(deviceIndexInput.getText().toString());
-        bluetoothGatt = devicesDiscovered.get(deviceSelected).connectGatt(this, false, btleGattCallback);
-        //BluetoothDevice device = btAdapter.getRemoteDevice("DE:5E:EE:07:B5:7B");
-        //bluetoothGatt = device.connectGatt(this, false, btleGattCallback);
+        //bluetoothGatt = devicesDiscovered.get(deviceSelected).connectGatt(this, false, btleGattCallback);
+
+        String popgloryOne = "DE:5E:EE:07:B5:7B";
+        String fitbitTwo = "EB:28:90:8A:66:1A";
+
+        BluetoothDevice device = btAdapter.getRemoteDevice(fitbitTwo);
+        bluetoothGatt = device.connectGatt(this, false, btleGattCallback);
     }
 
     public void disconnectDeviceSelected() {
