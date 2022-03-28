@@ -370,7 +370,7 @@ public class MainActivity extends AppCompatActivity {
             for (BluetoothGattCharacteristic gattCharacteristic :
                     gattCharacteristics) {
 
-                final String charUuid = gattCharacteristic.getUuid().toString();
+                final String charUuid = gattCharacteristic.getUuid().toString() + " with value: " + gattCharacteristic.getValue();
                 System.out.println("Characteristic discovered for service: " + charUuid);
                 MainActivity.this.runOnUiThread(new Runnable() {
                     public void run() {
