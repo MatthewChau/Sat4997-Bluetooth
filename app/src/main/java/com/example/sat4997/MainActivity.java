@@ -170,6 +170,7 @@ public class MainActivity extends AppCompatActivity {
     // Device connect call back
     private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback() {
 
+        private UUID SERVICE_UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb");
         private UUID HEART_RATE_UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb");
 
         @Override
@@ -225,7 +226,7 @@ public class MainActivity extends AppCompatActivity {
             super.onServicesDiscovered(gatt, status);
             List<BluetoothGattService> services = bluetoothGatt.getServices();
             for(BluetoothGattService service : services){
-                if( service.getUuid().equals("SERVICE_UUID")) { // TEMP
+                if( service.getUuid().equals(SERVICE_UUID)) { // TEMP
                     BluetoothGattCharacteristic characteristicData = service.getCharacteristic(HEART_RATE_UUID);
                     for (BluetoothGattDescriptor descriptor : characteristicData.getDescriptors()) {
                         descriptor.setValue( BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
@@ -238,7 +239,7 @@ public class MainActivity extends AppCompatActivity {
             // this will get called after the client initiates a BluetoothGatt.discoverServices() call
             MainActivity.this.runOnUiThread(new Runnable() {
                 public void run() {
-                    peripheralTextView.append("Device: " + bluetoothGatt.getDevice().getName() + "have been discovered\n");
+                    peripheralTextView.append("Device: " + bluetoothGatt.getDevice().getName() + " has been discovered\n");
                 }
             });
             displayGattServices(bluetoothGatt.getServices());
@@ -263,7 +264,7 @@ public class MainActivity extends AppCompatActivity {
     private void broadcastUpdate(final String action,
                                  final BluetoothGattCharacteristic characteristic) {
 
-        System.out.println(characteristic.getUuid());
+        System.out.println(characteristic.getUuid() + "Value: " + characteristic.getValue());
     }
 
     @Override
@@ -332,12 +333,14 @@ public class MainActivity extends AppCompatActivity {
     public void connectToDeviceSelected() {
         peripheralTextView.append("Trying to connect to device at index: " + deviceIndexInput.getText() + "\n");
         int deviceSelected = Integer.parseInt(deviceIndexInput.getText().toString());
-        //bluetoothGatt = devicesDiscovered.get(deviceSelected).connectGatt(this, false, btleGattCallback);
+//        bluetoothGatt = devicesDiscovered.get(deviceSelected).connectGatt(this, false, btleGattCallback);
 
         String popgloryOne = "DE:5E:EE:07:B5:7B";
+        String popgloryTwo = "C1:EB:18:FC:59:7B";
         String fitbitTwo = "EB:28:90:8A:66:1A";
+        String amazonTwo = "2C:71:FF:3A:67:70";
 
-        BluetoothDevice device = btAdapter.getRemoteDevice(fitbitTwo);
+        BluetoothDevice device = btAdapter.getRemoteDevice(popgloryTwo);
         bluetoothGatt = device.connectGatt(this, false, btleGattCallback);
     }
 
